@@ -49,15 +49,15 @@ def remove_outliers(df, columns, method, threshold):
             Q1 = df[col].quantile(0.25)
             Q3 = df[col].quantile(0.75)
             IQR = Q3 - Q1
-            print(IQR)
-            print(Threshold)
-            print(Threshold * IQR)
+            logger.info(IQR)
+            logger.info(threshold)
+            logger.info(threshold * IQR)
             lower_bound = Q1 - (threshold * IQR)
             upper_bound = Q3 + (threshold * IQR)
             # Calculate Q1, Q3, and IQR.
             # Use threshold to calculate lower and upper bounds.
             # Keep rows inside the bounds.
-            df_score_in_bounds = df[(df_output[col] >= lower) & (df_output[col] <= upper)]
+            df_score_in_bounds = df[(df_output[col] >= lower_bound) & (df_output[col] <= upper_bound)]
             rows_removed = df_output.shape[0] - df_score_in_bounds.shape[0]
             # Log a DEBUG message containing the bounds and the number of rows removed.
             logger.debug(f"""{col} Scores Clead via IQR method\nUpper Bound - {upper_bound}
