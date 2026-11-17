@@ -11,6 +11,7 @@ from src import (HealthResponse, setup_logging, OutlierSettings,
     MovieUploadInfo,
     MovieDataResponse,
     MovieProcessingReport,
+    MovieCache
 )
 from src.storage import MOVIE_COLUMNS
 from data_pipeline import create_cleaning_report, process_data, validate_dataframe
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Data Processing API", version="1.0.0")
 storage = MovieStorage()
+cache = MovieCache()
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
@@ -54,6 +56,8 @@ async def upload_movies(file: UploadFile = File(...)):
     df = df[MOVIE_COLUMNS]
 
     storage.save(df)
+    cache.invalidate()
+    logger.debug("caches cleared corrisponding to new db upload")
 
     logger.info(f"{file.filename} saved containing {df.shape[0]} rows")
     return MovieUploadInfo(
@@ -64,23 +68,38 @@ async def upload_movies(file: UploadFile = File(...)):
     )
 
 
+
 @app.get("/movies", response_model=MovieDataResponse)
 def get_movies(limit: int = Query(default=100, ge=1)):
-    # TODO: Use MovieStorage methods to retrieve up to limit rows and count the total number of stored movies.
-    # Return {"data": ..., "total_rows": ...}.
-    # If empty, return {"data": [], "total_rows": 0}.
-    # Log the row count at INFO.
+    # TODO 1: Look up the response using cache.get(limit).
+    # If it is not None, log the cache hit at INFO and return it.
+
+    #logger.info("VERY LOUND CANT MISS IT YELLING")
+    cache_resp = cache.get(limit)
+    if cache_resp is not None:
+        logger.info(f"existing cache for limit of {limit} found")
+        return cache_resp
+    # Keep Part 1's SQL retrieval, total count, and response construction here.
+
     df = storage.get()
     if df.empty:
         logger.info("Movies table is empty")
         return {"data": [], "total_rows": 0}
     records = json.loads(df.head(limit).to_json(orient="records"))
     
-    logger.info(f"Total Row Count -- {df.shape[0]}")
-    return MovieDataResponse(
+    response = MovieDataResponse(
         data=records,
         total_rows=df.shape[0]
     )
+    
+    #2: Before the existing return, cache the complete response
+    # using cache.set(limit, response).
+    # Keep the existing row-count log and return.
+    cache.set(limit, response.model_dump())
+    logger.debug("cache created")
+
+    logger.info(f"Total Row Count -- {df.shape[0]}")
+    return response
 
 
 @app.get("/movies/search", response_model=list[dict])
@@ -141,7 +160,8 @@ def process_movies(config: ProcessConfig):
     # Return validation_rows_removed and cleaning_report without a dataset ID.
     storage.save(df_proc)
     logger.info("database updated using validation and cleaning configuration")
-
+    cache.invalidate()
+    logger.debug("caches cleared corrisponding to db update through processing")
     return MovieProcessingReport(
         validation_rows_removed=val_lines_removed,
         cleaning_report=clr_report)
