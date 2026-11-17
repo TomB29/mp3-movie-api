@@ -100,48 +100,7 @@ def query_movies(
     logger.info(f'returned {len(query)} rows matching constraints, {["id"] + columns} returned for rows')
     return query
 
-    
 
-@app.post( "/datasets/{dataset_id}/process", response_model=ProcessingReport)
-def process_dataset(dataset_id: int, config: ProcessConfig):
-    """Validate and process a stored dataset using MP1 functions."""
-
-    df = storage.get(dataset_id)
-    if df is None:
-        logger.warning(f"ID not found: {dataset_id}")
-        raise HTTPException(status_code=404, detail=f"ID {dataset_id} not found")
-    config_dict = config.model_dump()
-    required_columns = config_dict["validation"]["required_columns"]
-    numeric_columns = config_dict["validation"]["numeric_columns"]
-
-    exists = df.columns
-
-    for elt in numeric_columns:
-        if elt not in exists:
-            raise HTTPException(status_code=400, detail=f"required column {elt} not found")
-            logger.error(f"{elt} does not exist in dataframe")
-    logger.info(f"All Required Columns Exist\n{numeric_columns}")
-
-    try:
-        df_val = (validate_dataframe(df, required_columns, numeric_columns)).copy()
-        val_lines_removed = df.shape[0] - df_val.shape[0]
-        logger.info(f"{val_lines_removed} rows removed in validation [containg null values]")
-
-        df_proc = process_data(df_val, config_dict)
-        clr_report = create_cleaning_report(df_val, df_proc)
-
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-
-
-    storage.update(dataset_id, df_proc)
-    logger.info(f"{dataset_id} updated using validation and cleaning configuration")
-
-    return ProcessingReport(
-        id=dataset_id,
-        validation_rows_removed=val_lines_removed,
-        cleaning_report=clr_report
-    )
 
 @app.post("/movies/process", response_model=MovieProcessingReport)
 def process_movies(config: ProcessConfig):
